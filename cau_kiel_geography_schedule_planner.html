@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="de" class="h-full bg-slate-950 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UnivIS Stundenplan Planer - CAU Kiel Geographie (B.Sc. 1. Sem)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0fdf4',
+              500: '#22c55e',
+              600: '#16a34a',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Drag and drop cursor & styling effects */
+    .draggable-card {
+      cursor: grab;
+      user-select: none;
+      touch-action: none;
+    }
+    .draggable-card:active {
+      cursor: grabbing;
+      opacity: 0.8;
+    }
+    .drag-over-slot {
+      background-color: rgba(34, 197, 94, 0.15) !important;
+      border: 2px dashed #22c55e !important;
+    }
+  </style>
+</head>
+<body class="h-full font-sans antialiased flex flex-col bg-slate-950 text-slate-100">
+
+  <!-- Header -->
+  <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-30 px-4 lg:px-8 py-3.5 flex flex-wrap items-center justify-between gap-4">
+    <div class="flex items-center gap-3">
+      <div class="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20">
+        <i data-lucide="compass" class="w-6 h-6"></i>
+      </div>
+      <div>
+        <h1 class="font-bold text-lg leading-none tracking-tight text-white flex items-center gap-2">
+          Stundenplan Geographie (B.Sc.)
+          <span class="text-xs font-normal px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">WiSe 2026/27</span>
+        </h1>
+        <p class="text-xs text-slate-400 mt-1">CAU Kiel • 1. Semester Pflichtveranstaltungen</p>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="flex items-center gap-2 flex-wrap">
+      <button id="exportIcsBtn" class="bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-2 rounded-xl text-sm font-medium flex items-center gap-2 transition shadow-lg shadow-emerald-950/50 border border-emerald-400/30">
+        <i data-lucide="download" class="w-4 h-4"></i>
+        <span>ICS Exportieren</span>
+      </button>
+
+      <label class="cursor-pointer bg-slate-800 hover:bg-slate-700 text-slate-200 px-3.5 py-2 rounded-xl text-sm font-medium border border-slate-700 flex items-center gap-2 transition">
+        <i data-lucide="upload" class="w-4 h-4"></i>
+        <span>ICS Import</span>
+        <input type="file" id="icsFileInput" accept=".ics" class="hidden">
+      </label>
+
+      <button id="addManualBtn" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3.5 py-2 rounded-xl text-sm font-medium border border-slate-700 flex items-center gap-2 transition">
+        <i data-lucide="plus" class="w-4 h-4"></i>
+        <span>Kurs hinzufügen</span>
+      </button>
+
+      <button id="resetPresetBtn" class="bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 px-3.5 py-2 rounded-xl text-sm font-medium flex items-center gap-2 transition" title="Setzt den Plan auf die ursprünglichen Fächer zurück">
+        <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+        <span>Auf Standard zurücksetzen</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Content Layout -->
+  <div class="flex-1 flex flex-col md:flex-row overflow-hidden">
+    
+    <!-- Sidebar / Course List -->
+    <aside class="w-full md:w-80 lg:w-96 border-r border-slate-800 bg-slate-900/40 flex flex-col shrink-0 max-h-64 md:max-h-full overflow-hidden">
+      <div class="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/60">
+        <h2 class="font-semibold text-sm text-slate-200 flex items-center gap-2">
+          <i data-lucide="layers" class="w-4 h-4 text-emerald-400"></i>
+          Module & Kurse
+          <span id="courseCountBadge" class="ml-1 text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-mono">0</span>
+        </h2>
+        <div class="text-xs" id="overlapSummary">0 Konflikte</div>
+      </div>
+
+      <!-- Conflicts Alert Box -->
+      <div id="conflictAlert" class="hidden m-3 p-3 bg-rose-950/60 border border-rose-500/40 rounded-xl text-xs text-rose-300 flex items-start gap-2.5 shadow-lg">
+        <i data-lucide="alert-triangle" class="w-4 h-4 text-rose-400 shrink-0 mt-0.5"></i>
+        <div>
+          <span class="font-semibold block mb-0.5">Überschneidung im Stundenplan!</span>
+          <span id="conflictAlertText">Zwei oder mehr Kurse finden zeitgleich statt.</span>
+        </div>
+      </div>
+
+      <!-- Course Cards Container -->
+      <div id="courseList" class="flex-1 overflow-y-auto p-3 space-y-2.5">
+        <!-- Rendered dynamically -->
+      </div>
+    </aside>
+
+    <!-- Calendar Grid Area -->
+    <main class="flex-1 flex flex-col bg-slate-950 overflow-x-auto overflow-y-auto p-4 md:p-6">
+      <div class="min-w-[760px] flex-1 flex flex-col bg-slate-900/60 rounded-2xl border border-slate-800 shadow-2xl overflow-hidden">
+        
+        <!-- Days Header -->
+        <div class="grid grid-cols-6 border-b border-slate-800 bg-slate-900 sticky top-0 z-20 text-xs font-semibold text-slate-400">
+          <div class="p-3 border-r border-slate-800 text-center uppercase tracking-wider text-slate-500">Uhrzeit</div>
+          <div class="p-3 border-r border-slate-800 text-center uppercase tracking-wider">Montag</div>
+          <div class="p-3 border-r border-slate-800 text-center uppercase tracking-wider">Dienstag</div>
+          <div class="p-3 border-r border-slate-800 text-center uppercase tracking-wider">Mittwoch</div>
+          <div class="p-3 border-r border-slate-800 text-center uppercase tracking-wider">Donnerstag</div>
+          <div class="p-3 text-center uppercase tracking-wider">Freitag</div>
+        </div>
+
+        <!-- Interactive Grid Body (8:00 - 18:00) -->
+        <div class="flex-1 relative min-h-[640px]" id="calendarGrid">
+          <!-- Hour Grid Slots (Background) -->
+          <div id="gridRows" class="absolute inset-0 grid grid-rows-10 pointer-events-none">
+            <!-- Dynamically populated rows 8:00 - 18:00 -->
+          </div>
+
+          <!-- Drop Targets Overlay for Drag & Drop -->
+          <div class="absolute inset-0 grid grid-cols-6">
+            <div class="border-r border-slate-800/50 pointer-events-none"></div> <!-- Time Column Spacer -->
+            <div class="col-span-5 grid grid-cols-5 h-full relative" id="eventsContainer">
+              <div id="day-0" data-day="0" class="relative border-r border-slate-800/40 h-full day-column"></div>
+              <div id="day-1" data-day="1" class="relative border-r border-slate-800/40 h-full day-column"></div>
+              <div id="day-2" data-day="2" class="relative border-r border-slate-800/40 h-full day-column"></div>
+              <div id="day-3" data-day="3" class="relative border-r border-slate-800/40 h-full day-column"></div>
+              <div id="day-4" data-day="4" class="relative h-full day-column"></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </main>
+
+  </div>
+
+  <!-- Modal for Creating & Editing Courses -->
+  <div id="courseModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+    <div class="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-6 shadow-2xl relative">
+      <button id="closeModalBtn" class="absolute top-4 right-4 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+      <h3 id="modalTitle" class="text-lg font-bold text-white mb-4 flex items-center gap-2">
+        <i data-lucide="edit-3" class="w-5 h-5 text-emerald-400"></i>
+        <span>Kurs bearbeiten</span>
+      </h3>
+      <form id="courseForm" class="space-y-4">
+        <input type="hidden" id="editCourseId">
+        
+        <div>
+          <label class="block text-xs font-medium text-slate-400 mb-1">Modulname / Titel</label>
+          <input type="text" id="mTitle" required placeholder="z.B. Physische Geographie I" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500">
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-slate-400 mb-1">Veranstaltungstyp</label>
+            <select id="mType" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500">
+              <option value="V">Vorlesung (V)</option>
+              <option value="BS">Begleitseminar (BS)</option>
+              <option value="V/UE">Vorlesung/Übung (V/UE)</option>
+              <option value="TU">Tutorium (TU)</option>
+              <option value="Ü">Übung (Ü)</option>
+              <option value="GP">Geländepraktikum (GP)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-400 mb-1">Wochentag</label>
+            <select id="mDay" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500">
+              <option value="0">Montag</option>
+              <option value="1">Dienstag</option>
+              <option value="2">Mittwoch</option>
+              <option value="3">Donnerstag</option>
+              <option value="4">Freitag</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-slate-400 mb-1">Startzeit</label>
+            <input type="time" id="mStart" required value="10:15" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-400 mb-1">Endzeit</label>
+            <input type="time" id="mEnd" required value="11:45" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-slate-400 mb-1">Raum / Dozent</label>
+          <input type="text" id="mRoom" placeholder="z.B. LMS12 - R.9 / Scholz" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500">
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-slate-400 mb-1">Farbe im Kalender</label>
+          <select id="mColor" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500">
+            <option value="emerald">Grün (Physische Geographie)</option>
+            <option value="blue">Blau (Humangeographie)</option>
+            <option value="purple">Lila/Violett (Statistik)</option>
+            <option value="amber">Braun/Orange (GIS I)</option>
+            <option value="cyan">Türkis</option>
+            <option value="rose">Rot/Rose</option>
+          </select>
+        </div>
+
+        <div class="pt-3 flex justify-between gap-2 border-t border-slate-800 mt-4">
+          <button type="button" id="deleteModalBtn" class="px-3.5 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-xl text-sm font-medium transition hidden">Entfernen</button>
+          <div class="flex gap-2 ml-auto">
+            <button type="button" id="cancelModalBtn" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm font-medium transition">Abbrechen</button>
+            <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-medium transition shadow-md">Speichern</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // Storage Key
+    const STORAGE_KEY = 'cau_geographie_bachelor_plan';
+
+    // Application Hours Range
+    const START_HOUR = 8;
+    const END_HOUR = 18;
+    const TOTAL_HOURS = END_HOUR - START_HOUR;
+
+    // Default CAU Kiel 1st Semester Geography Schedule (Exact match from user image)
+    const PRESET_COURSES = [
+      { id: 'geo-1', title: 'Physische Geographie I', type: 'V', day: 0, start: '12:15', end: '13:45', room: 'LMS12 - R.9 / Scholz', color: 'emerald', active: true },
+      { id: 'geo-2', title: 'Physische Geographie I', type: 'V', day: 1, start: '10:15', end: '11:45', room: 'LMS12 - R.9 / Scholz', color: 'emerald', active: true },
+      { id: 'geo-3', title: 'Physische Geographie I', type: 'BS', day: 3, start: '10:15', end: '11:45', room: 'LMS8 - R.01.010 / Dannemann', color: 'emerald', active: true },
+      { id: 'geo-4', title: 'Humangeographie I', type: 'V', day: 0, start: '14:15', end: '15:45', room: 'LMS12 - R.9', color: 'blue', active: true },
+      { id: 'geo-5', title: 'Humangeographie I', type: 'V', day: 1, start: '08:15', end: '09:45', room: 'LMS12 - R.9', color: 'blue', active: true },
+      { id: 'geo-6', title: 'Humangeographie I', type: 'BS', day: 1, start: '12:15', end: '13:45', room: 'LMS8 - R.01.010', color: 'blue', active: true },
+      { id: 'geo-7', title: 'Statistik für Geographiestudierende', type: 'V/UE', day: 2, start: '12:15', end: '13:45', room: 'LMS12 - R.9', color: 'purple', active: true },
+      { id: 'geo-8', title: 'Geographische Informationssysteme I', type: 'V/UE', day: 3, start: '12:15', end: '13:45', room: 'LMS12 - R.9', color: 'amber', active: true },
+      { id: 'geo-9', title: 'Geographische Informationssysteme I (TU)', type: 'TU', day: 4, start: '12:15', end: '13:45', room: 'LMS8 - R.01.018', color: 'amber', active: true }
+    ];
+
+    // Color Styles
+    const COLOR_MAP = {
+      emerald: { bg: 'bg-emerald-950/80', border: 'border-emerald-500/50', text: 'text-emerald-200', badge: 'bg-emerald-500/20 text-emerald-300', dot: 'bg-emerald-400' },
+      blue: { bg: 'bg-blue-950/80', border: 'border-blue-500/50', text: 'text-blue-200', badge: 'bg-blue-500/20 text-blue-300', dot: 'bg-blue-400' },
+      purple: { bg: 'bg-purple-950/80', border: 'border-purple-500/50', text: 'text-purple-200', badge: 'bg-purple-500/20 text-purple-300', dot: 'bg-purple-400' },
+      amber: { bg: 'bg-amber-950/80', border: 'border-amber-500/50', text: 'text-amber-200', badge: 'bg-amber-500/20 text-amber-300', dot: 'bg-amber-400' },
+      cyan: { bg: 'bg-cyan-950/80', border: 'border-cyan-500/50', text: 'text-cyan-200', badge: 'bg-cyan-500/20 text-cyan-300', dot: 'bg-cyan-400' },
+      rose: { bg: 'bg-rose-950/80', border: 'border-rose-500/50', text: 'text-rose-200', badge: 'bg-rose-500/20 text-rose-300', dot: 'bg-rose-400' }
+    };
+
+    let courses = [];
+    let draggedCourseId = null;
+
+    // DOM Elements
+    const gridRows = document.getElementById('gridRows');
+    const courseList = document.getElementById('courseList');
+    const conflictAlert = document.getElementById('conflictAlert');
+    const conflictAlertText = document.getElementById('conflictAlertText');
+    const courseCountBadge = document.getElementById('courseCountBadge');
+    const overlapSummary = document.getElementById('overlapSummary');
+
+    // Modal elements
+    const courseModal = document.getElementById('courseModal');
+    const modalTitle = document.getElementById('modalTitle');
+    const addManualBtn = document.getElementById('addManualBtn');
+    const closeModalBtn = document.getElementById('closeModalBtn');
+    const cancelModalBtn = document.getElementById('cancelModalBtn');
+    const deleteModalBtn = document.getElementById('deleteModalBtn');
+    const courseForm = document.getElementById('courseForm');
+    const editCourseId = document.getElementById('editCourseId');
+    const resetPresetBtn = document.getElementById('resetPresetBtn');
+    const exportIcsBtn = document.getElementById('exportIcsBtn');
+    const icsFileInput = document.getElementById('icsFileInput');
+
+    // LocalStorage Functions
+    function saveCourses() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(courses));
+    }
+
+    function loadCourses() {
+      const data = localStorage.getItem(STORAGE_KEY);
+      if (data) {
+        try {
+          courses = JSON.parse(data);
+        } catch (e) {
+          courses = [...PRESET_COURSES];
+        }
+      } else {
+        courses = JSON.parse(JSON.stringify(PRESET_COURSES));
+      }
+    }
+
+    // Initialize Grid Hour Background Lines
+    function initGrid() {
+      gridRows.innerHTML = '';
+      for (let hour = START_HOUR; hour < END_HOUR; hour++) {
+        const row = document.createElement('div');
+        row.className = 'grid grid-cols-6 border-b border-slate-800/40 text-xs text-slate-500 font-mono';
+        
+        const timeLabel = document.createElement('div');
+        timeLabel.className = 'border-r border-slate-800/60 p-2 flex items-start justify-center bg-slate-900/40 select-none';
+        timeLabel.textContent = `${hour.toString().padStart(2, '0')}:00`;
+        row.appendChild(timeLabel);
+
+        for (let day = 0; day < 5; day++) {
+          const dayCell = document.createElement('div');
+          dayCell.className = day < 4 ? 'border-r border-slate-800/20' : '';
+          row.appendChild(dayCell);
+        }
+        gridRows.appendChild(row);
+      }
+
+      setupDragAndDropTargets();
+    }
+
+    // Time calculations
+    function timeToMinutes(timeStr) {
+      const [h, m] = timeStr.split(':').map(Number);
+      return h * 60 + m;
+    }
+
+    function minutesToTime(mins) {
+      const h = Math.floor(mins / 60).toString().padStart(2, '0');
+      const m = (mins % 60).toString().padStart(2, '0');
+      return `${h}:${m}`;
+    }
+
+    function calculateTopAndHeight(startTime, endTime) {
+      const startMin = timeToMinutes(startTime);
+      const endMin = timeToMinutes(endTime);
+      const gridStartMin = START_HOUR * 60;
+      const totalGridMin = TOTAL_HOURS * 60;
+
+      const topPercent = ((startMin - gridStartMin) / totalGridMin) * 100;
+      const heightPercent = ((endMin - startMin) / totalGridMin) * 100;
+
+      return { top: Math.max(0, topPercent), height: Math.max(3, heightPercent) };
+    }
+
+    // Conflict detection
+    function detectOverlaps() {
+      courses.forEach(c => c.hasConflict = false);
+      let totalConflicts = 0;
+
+      const active = courses.filter(c => c.active);
+
+      for (let i = 0; i < active.length; i++) {
+        for (let j = i + 1; j < active.length; j++) {
+          const c1 = active[i];
+          const c2 = active[j];
+
+          if (c1.day === c2.day) {
+            const s1 = timeToMinutes(c1.start);
+            const e1 = timeToMinutes(c1.end);
+            const s2 = timeToMinutes(c2.start);
+            const e2 = timeToMinutes(c2.end);
+
+            if (Math.max(s1, s2) < Math.min(e1, e2)) {
+              c1.hasConflict = true;
+              c2.hasConflict = true;
+              totalConflicts++;
+            }
+          }
+        }
+      }
+
+      if (totalConflicts > 0) {
+        conflictAlert.classList.remove('hidden');
+        conflictAlertText.textContent = `${totalConflicts} Überschneidung(en) in deinem aktuellen Planer!`;
+        overlapSummary.textContent = `${totalConflicts} Konflikt(e)`;
+        overlapSummary.className = "text-xs font-semibold text-rose-400";
+      } else {
+        conflictAlert.classList.add('hidden');
+        overlapSummary.textContent = "Keine Konflikte";
+        overlapSummary.className = "text-xs text-emerald-400";
+      }
+    }
+
+    // Main Render Function
+    function renderCalendar() {
+      // Clear Day Columns
+      for (let day = 0; day < 5; day++) {
+        const col = document.getElementById(`day-${day}`);
+        if (col) col.innerHTML = '';
+      }
+
+      detectOverlaps();
+
+      const activeCourses = courses.filter(c => c.active);
+
+      activeCourses.forEach(course => {
+        const dayCol = document.getElementById(`day-${course.day}`);
+        if (!dayCol) return;
+
+        const { top, height } = calculateTopAndHeight(course.start, course.end);
+        const color = COLOR_MAP[course.color] || COLOR_MAP.emerald;
+
+        const card = document.createElement('div');
+        card.draggable = true;
+        card.dataset.id = course.id;
+        card.className = `draggable-card absolute left-1 right-1 rounded-xl p-2.5 border backdrop-blur-md transition-all shadow-lg group hover:z-30 overflow-hidden flex flex-col justify-between cursor-grab ${
+          course.hasConflict 
+            ? 'bg-rose-950/90 border-rose-500 text-rose-200 ring-2 ring-rose-500/50' 
+            : `${color.bg} ${color.border} ${color.text}`
+        }`;
+        card.style.top = `${top}%`;
+        card.style.height = `${height}%`;
+
+        card.innerHTML = `
+          <div class="overflow-hidden pointer-events-none">
+            <div class="flex items-start justify-between gap-1 mb-1">
+              <span class="font-bold text-xs leading-snug truncate" title="${course.title}">${course.title}</span>
+              <span class="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded ${color.badge} shrink-0 font-bold border border-white/10">${course.type}</span>
+            </div>
+            <div class="text-[11px] opacity-90 flex items-center gap-1 font-mono">
+              <i data-lucide="clock" class="w-3 h-3 shrink-0"></i>
+              <span>${course.start} - ${course.end}</span>
+            </div>
+            ${course.room ? `
+              <div class="text-[10px] opacity-80 truncate mt-0.5 flex items-center gap-1">
+                <i data-lucide="map-pin" class="w-3 h-3 shrink-0"></i>
+                <span class="truncate">${course.room}</span>
+              </div>
+            ` : ''}
+          </div>
+          ${course.hasConflict ? `
+            <div class="mt-0.5 text-[10px] font-bold text-rose-300 flex items-center gap-1">
+              <i data-lucide="alert-circle" class="w-3 h-3 shrink-0"></i>
+              <span>Zeitkollision</span>
+            </div>
+          ` : ''}
+        `;
+
+        // Drag events on course cards
+        card.addEventListener('dragstart', (e) => {
+          draggedCourseId = course.id;
+          e.dataTransfer.setData('text/plain', course.id);
+          card.classList.add('opacity-40');
+        });
+
+        card.addEventListener('dragend', () => {
+          draggedCourseId = null;
+          card.classList.remove('opacity-40');
+        });
+
+        // Click to edit
+        card.addEventListener('click', (e) => {
+          openEditModal(course.id);
+        });
+
+        dayCol.appendChild(card);
+      });
+
+      renderSidebarList();
+      saveCourses();
+      lucide.createIcons();
+    }
+
+    // Sidebar Course List
+    function renderSidebarList() {
+      courseList.innerHTML = '';
+      courseCountBadge.textContent = courses.length;
+
+      const dayNames = ['Mo', 'Di', 'Mi', 'Do', 'Fr'];
+
+      courses.forEach(course => {
+        const color = COLOR_MAP[course.color] || COLOR_MAP.emerald;
+
+        const item = document.createElement('div');
+        item.className = `p-3 rounded-xl border transition flex items-start justify-between gap-3 ${
+          course.active 
+            ? 'bg-slate-900/90 border-slate-700/80 shadow-md' 
+            : 'bg-slate-950/40 border-slate-800/50 opacity-40'
+        }`;
+
+        item.innerHTML = `
+          <div class="flex items-start gap-2.5 min-w-0">
+            <input type="checkbox" ${course.active ? 'checked' : ''} data-id="${course.id}" class="toggle-course mt-1 rounded bg-slate-950 border-slate-700 text-emerald-500 focus:ring-emerald-500/20 cursor-pointer">
+            <div class="min-w-0">
+              <div class="flex items-center gap-1.5 flex-wrap">
+                <span class="w-2.5 h-2.5 rounded-full ${color.dot}"></span>
+                <span class="font-semibold text-xs text-slate-200 truncate" title="${course.title}">${course.title}</span>
+                <span class="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 border border-slate-700">${course.type}</span>
+              </div>
+              <div class="text-[11px] text-slate-400 mt-1 flex items-center gap-2 font-mono">
+                <span>${dayNames[course.day]} ${course.start}-${course.end}</span>
+              </div>
+              ${course.room ? `<div class="text-[10px] text-slate-500 truncate mt-0.5">${course.room}</div>` : ''}
+            </div>
+          </div>
+          <div class="flex items-center gap-1 shrink-0">
+            <button data-id="${course.id}" class="edit-course text-slate-400 hover:text-emerald-400 p-1 transition rounded-lg hover:bg-slate-800" title="Bearbeiten">
+              <i data-lucide="edit-2" class="w-3.5 h-3.5"></i>
+            </button>
+            <button data-id="${course.id}" class="delete-course text-slate-500 hover:text-rose-400 p-1 transition rounded-lg hover:bg-slate-800" title="Löschen">
+              <i data-lucide="x" class="w-4 h-4"></i>
+            </button>
+          </div>
+        `;
+
+        courseList.appendChild(item);
+      });
+
+      // Bind Listeners
+      document.querySelectorAll('.toggle-course').forEach(cb => {
+        cb.addEventListener('change', (e) => {
+          const id = e.target.getAttribute('data-id');
+          const course = courses.find(c => c.id === id);
+          if (course) {
+            course.active = e.target.checked;
+            renderCalendar();
+          }
+        });
+      });
+
+      document.querySelectorAll('.edit-course').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openEditModal(btn.getAttribute('data-id'));
+        });
+      });
+
+      document.querySelectorAll('.delete-course').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          deleteCourse(btn.getAttribute('data-id'));
+        });
+      });
+
+      lucide.createIcons();
+    }
+
+    // Drag and Drop Grid Setup
+    function setupDragAndDropTargets() {
+      const dayColumns = document.querySelectorAll('.day-column');
+
+      dayColumns.forEach(col => {
+        col.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          col.classList.add('drag-over-slot');
+        });
+
+        col.addEventListener('dragleave', () => {
+          col.classList.remove('drag-over-slot');
+        });
+
+        col.addEventListener('drop', (e) => {
+          e.preventDefault();
+          col.classList.remove('drag-over-slot');
+
+          const courseId = e.dataTransfer.getData('text/plain') || draggedCourseId;
+          if (!courseId) return;
+
+          const course = courses.find(c => c.id === courseId);
+          if (!course) return;
+
+          const targetDay = parseInt(col.getAttribute('data-day'));
+          
+          // Calculate target time based on vertical click position relative to grid
+          const rect = col.getBoundingClientRect();
+          const dropY = e.clientY - rect.top;
+          const heightRatio = Math.max(0, Math.min(1, dropY / rect.height));
+
+          const totalGridMinutes = TOTAL_HOURS * 60;
+          let calculatedMinutes = (START_HOUR * 60) + (heightRatio * totalGridMinutes);
+
+          // Snap to 15-minute intervals
+          calculatedMinutes = Math.round(calculatedMinutes / 15) * 15;
+
+          // Maintain duration
+          const currentDuration = timeToMinutes(course.end) - timeToMinutes(course.start);
+          const newStartMin = Math.min(Math.max(START_HOUR * 60, calculatedMinutes), (END_HOUR * 60) - currentDuration);
+          const newEndMin = newStartMin + currentDuration;
+
+          course.day = targetDay;
+          course.start = minutesToTime(newStartMin);
+          course.end = minutesToTime(newEndMin);
+
+          renderCalendar();
+        });
+      });
+    }
+
+    // Modal Management
+    function openAddModal() {
+      editCourseId.value = '';
+      modalTitle.querySelector('span').textContent = 'Kurs hinzufügen';
+      courseForm.reset();
+      deleteModalBtn.classList.add('hidden');
+      courseModal.classList.remove('hidden');
+    }
+
+    function openEditModal(id) {
+      const course = courses.find(c => c.id === id);
+      if (!course) return;
+
+      editCourseId.value = course.id;
+      document.getElementById('mTitle').value = course.title;
+      document.getElementById('mType').value = course.type;
+      document.getElementById('mDay').value = course.day;
+      document.getElementById('mStart').value = course.start;
+      document.getElementById('mEnd').value = course.end;
+      document.getElementById('mRoom').value = course.room || '';
+      document.getElementById('mColor').value = course.color || 'emerald';
+
+      modalTitle.querySelector('span').textContent = 'Kurs bearbeiten';
+      deleteModalBtn.classList.remove('hidden');
+      courseModal.classList.remove('hidden');
+    }
+
+    function deleteCourse(id) {
+      courses = courses.filter(c => c.id !== id);
+      renderCalendar();
+    }
+
+    function closeModal() {
+      courseModal.classList.add('hidden');
+    }
+
+    // ICS Kalender Generator & Direct Downloader
+    function exportICS() {
+      const activeCourses = courses.filter(c => c.active);
+      if (activeCourses.length === 0) {
+        alert('Keine aktiven Kurse im Stundenplan zum Exportieren!');
+        return;
+      }
+
+      // Base date: Monday, October 19, 2026 (Start of Winter Semester 2026/27)
+      const baseMonday = new Date(2026, 9, 19); 
+
+      let icsContent = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//CAU Kiel//Geographie B.Sc. Planer//DE',
+        'CALSCALE:GREGORIAN',
+        'METHOD:PUBLISH'
+      ];
+
+      activeCourses.forEach(c => {
+        const eventDate = new Date(baseMonday);
+        eventDate.setDate(baseMonday.getDate() + c.day);
+
+        const [startH, startM] = c.start.split(':');
+        const [endH, endM] = c.end.split(':');
+
+        const dtStart = new Date(eventDate);
+        dtStart.setHours(parseInt(startH), parseInt(startM), 0);
+
+        const dtEnd = new Date(eventDate);
+        dtEnd.setHours(parseInt(endH), parseInt(endM), 0);
+
+        const formatDate = (date) => {
+          return date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+        };
+
+        icsContent.push('BEGIN:VEVENT');
+        icsContent.push(`SUMMARY:${c.title} (${c.type})`);
+        icsContent.push(`LOCATION:${c.room || 'CAU Kiel'}`);
+        icsContent.push(`DESCRIPTION:Veranstaltungstyp: ${c.type}`);
+        icsContent.push(`DTSTART:${formatDate(dtStart)}`);
+        icsContent.push(`DTEND:${formatDate(dtEnd)}`);
+        icsContent.push('RRULE:FREQ=WEEKLY;UNTIL=20270212T235959Z'); // Semester end
+        icsContent.push('END:VEVENT');
+      });
+
+      icsContent.push('END:VCALENDAR');
+
+      const blob = new Blob([icsContent.join('\r\n')], { type: 'text/calendar;charset=utf-8' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'stundenplan_geographie_cau.ics';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    }
+
+    // ICS Import Engine
+    function parseICS(icsText) {
+      const lines = icsText.split(/\r\n|\n|\r/);
+      const events = [];
+      let current = null;
+
+      for (let line of lines) {
+        if (line.startsWith('BEGIN:VEVENT')) {
+          current = {};
+        } else if (line.startsWith('END:VEVENT')) {
+          if (current && current.title) {
+            events.push(current);
+          }
+          current = null;
+        } else if (current) {
+          if (line.startsWith('SUMMARY:')) {
+            current.title = line.replace('SUMMARY:', '').trim();
+          } else if (line.startsWith('LOCATION:')) {
+            current.room = line.replace('LOCATION:', '').trim();
+          } else if (line.startsWith('DTSTART')) {
+            const val = line.split(':')[1];
+            if (val && val.length >= 13) {
+              const hours = val.substring(9, 11);
+              const mins = val.substring(11, 13);
+              current.start = `${hours}:${mins}`;
+
+              const y = parseInt(val.substring(0, 4));
+              const m = parseInt(val.substring(4, 6)) - 1;
+              const d = parseInt(val.substring(6, 8));
+              const dt = new Date(y, m, d);
+              let dayIdx = dt.getDay() - 1;
+              if (dayIdx >= 0 && dayIdx <= 4) {
+                current.day = dayIdx;
+              }
+            }
+          } else if (line.startsWith('DTEND')) {
+            const val = line.split(':')[1];
+            if (val && val.length >= 13) {
+              const hours = val.substring(9, 11);
+              const mins = val.substring(11, 13);
+              current.end = `${hours}:${mins}`;
+            }
+          }
+        }
+      }
+      return events;
+    }
+
+    icsFileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const parsed = parseICS(event.target.result);
+        if (parsed.length > 0) {
+          const newCourses = parsed.map((ev, idx) => ({
+            id: `imported-${Date.now()}-${idx}`,
+            title: ev.title || 'Importierter Kurs',
+            type: 'V',
+            day: ev.day !== undefined ? ev.day : 0,
+            start: ev.start || '10:15',
+            end: ev.end || '11:45',
+            room: ev.room || '',
+            color: 'emerald',
+            active: true
+          }));
+          courses = [...courses, ...newCourses];
+          renderCalendar();
+        } else {
+          alert('Keine gültigen Termine in der ICS-Datei gefunden.');
+        }
+      };
+      reader.readAsText(file);
+    });
+
+    // Modal Form Listeners
+    addManualBtn.addEventListener('click', openAddModal);
+    closeModalBtn.addEventListener('click', closeModal);
+    cancelModalBtn.addEventListener('click', closeModal);
+    exportIcsBtn.addEventListener('click', exportICS);
+
+    deleteModalBtn.addEventListener('click', () => {
+      const id = editCourseId.value;
+      if (id) {
+        deleteCourse(id);
+        closeModal();
+      }
+    });
+
+    courseForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const id = editCourseId.value;
+
+      const courseData = {
+        title: document.getElementById('mTitle').value,
+        type: document.getElementById('mType').value,
+        day: parseInt(document.getElementById('mDay').value),
+        start: document.getElementById('mStart').value,
+        end: document.getElementById('mEnd').value,
+        room: document.getElementById('mRoom').value,
+        color: document.getElementById('mColor').value,
+        active: true
+      };
+
+      if (id) {
+        const index = courses.findIndex(c => c.id === id);
+        if (index !== -1) {
+          courses[index] = { ...courses[index], ...courseData };
+        }
+      } else {
+        courseData.id = `user-${Date.now()}`;
+        courses.push(courseData);
+      }
+
+      closeModal();
+      renderCalendar();
+    });
+
+    resetPresetBtn.addEventListener('click', () => {
+      if (confirm('Möchtest du den Stundenplan auf die ursprünglichen Standard-Kurse der Geographie zurücksetzen?')) {
+        courses = JSON.parse(JSON.stringify(PRESET_COURSES));
+        renderCalendar();
+      }
+    });
+
+    window.onload = function() {
+      initGrid();
+      loadCourses();
+      renderCalendar();
+    };
+  </script>
+</body>
+</html>
